@@ -92,6 +92,34 @@ Timing against reloads. Every one of the 297 502s falls 100–107ms after the pr
 
 The failures arrive in bursts, not a trickle. Each of the nine reloads produced 24–39 502s, median 34, and each burst fits inside one millisecond: for the first reload, the earliest 502 came 100ms after and the latest 101ms after.
 
+## The same runs on a Linux runner
+
+Everything above was re-run on GitHub Actions `ubuntu-latest` (4 vCPU, 16GB) with the same image, so nginx is identical and the host is the only difference. Run 32120155940; raw logs are in that run's artifacts.
+
+| Scenario | macOS / Docker Desktop | ubuntu-latest |
+|---|---|---|
+| baseline-concurrent | 273–305 in 70,000 | 63 in 70,000 |
+| baseline-sequential | 0 in 400 | 0 in 400 |
+| retry-get | 0 502s, 478 in the error log | 0 502s, 29 in the error log |
+| retry-post | 237 / 237 | 37 / 37 |
+| nonidem-post | 0 502s, 405 errors, no duplicates | 0 502s, 39 errors, no duplicates |
+| ka-timeout | 303 (baseline 273–305) | 52 (baseline 63) |
+| idle-close | 0 | 0 |
+| baseline-20s | 2,236 in 381,087 | 1,022 in 990,500 |
+| drain | 0 in 382,582 | 0 in 1,799,678 |
+
+Every conclusion holds. Concurrency is still the condition, retries still hide the failure without removing it, POST is still not retried, the upstream `keepalive_timeout` still does nothing, draining still takes it to zero.
+
+What moves is the rate. The runner produced roughly a quarter of the failures per request, and 2.6 times the throughput in the same 20 seconds, so a scenario fits fewer reloads (four instead of nine during the 3.6s of load).
+
+Two things are worth calling out.
+
+The 100ms floor held. On the runner the delay after a reload was 98–102ms, median 100, against 100–107ms, median 101 on the Mac. A constant that survives a change of host and kernel is more likely to sit in nginx than in scheduling. It still was not traced.
+
+The split between the two error signatures flipped. The Mac produced 287 `prematurely closed` against 10 `recv() failed`; the runner produced 29 against 34. Neither string can be treated as the one to grep for.
+
+The packet-level window narrowed and the RST slowed: FIN to the next request was a median of 619µs against 904µs, and that request to the RST a median of 9µs against 2µs. Both remain well under a millisecond.
+
 ## What was not determined
 
 - What sets the 100ms floor. Whether it is a timer in nginx or the wait before old workers close their idle connections was not investigated
@@ -100,7 +128,9 @@ The failures arrive in bursts, not a trickle. Each of the nine reloads produced 
 - Whether `non_idempotent` is safe in general. It did not duplicate here because the backend never read the request; a response lost after processing would duplicate, and that path could not be produced
 - The client-side cost of draining. Reloading front drops client keepalive connections, and nothing was measured on that side
 - The production rate. 0.4% here comes from reloading every 0.4s; a real deploy reloads once
-- Bare metal. The host is Docker Desktop on macOS, a linuxkit VM. CI re-runs the same image on `ubuntu-latest`
+- Why the runner fails about four times less often per request. The rate depends on the host, and neither host was profiled to explain it
+- Why the two error signatures land in different proportions on the two hosts
+- Bare metal. Neither host is one: a linuxkit VM on macOS, and a cloud VM on Actions
 
 ## What is kept in out/
 
