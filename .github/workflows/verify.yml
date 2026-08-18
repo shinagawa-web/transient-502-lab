@@ -25,6 +25,10 @@ jobs:
           - idle-close
           - baseline-20s
           - drain
+          - app-baseline
+          - app-idle-close
+          - app-slow-nonidem
+          - app-slow-kill
     steps:
       - uses: actions/checkout@v4
 

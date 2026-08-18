@@ -120,12 +120,34 @@ The split between the two error signatures flipped. The Mac produced 287 `premat
 
 The packet-level window narrowed and the RST slowed: FIN to the next request was a median of 619µs against 904µs, and that request to the RST a median of 9µs against 2µs. Both remain well under a millisecond.
 
+## With an application server as the backend
+
+nginx makes a convenient backend — its reload closes idle connections on command — but it is not what sits behind a proxy in production, and its graceful shutdown is unusually well behaved. These scenarios put Node.js 22 there instead. It speaks HTTP/1.1 keepalive, front pools connections to it the same way (40,000 requests over 414 connections), and it closes idle connections on its own 5s timer without coordinating with anyone.
+
+Two instances run on 8081 and 8082 with `max_fails=0`, so retiring one leaves the other serving and nginx does not take either out of rotation.
+
+| Scenario | Requests | 502 | What it shows |
+|---|---|---|---|
+| app-baseline | 70,000 | 4,997 | Restarting an instance without removing it from the upstream produces mostly `connect() failed (111: Connection refused)` (4,964), with 33 from the race. The same lesson as the nginx side: retire before stopping |
+| app-idle-close | 40,000 | 0 | The app's own 1s idle timeout, load broken every 1.5s. Zero, as with the nginx backend |
+| app-slow-nonidem | 70,000 | 0 | 50ms of processing, POST, `non_idempotent`, instances stopped with SIGTERM. The backend received exactly 70,000: no duplicates |
+| app-slow-kill | 70,000 | 0 | Same, but SIGKILL. The backend received 74,525 |
+
+That last row is the one that matters.
+
+The client sent 70,000 POSTs and saw zero 502s. The backend executed 74,525. About 4,525 requests ran twice, silently, while every client got a 200.
+
+The difference between the two rows is only how the instance dies. Under SIGTERM, Node stops accepting, lets in-flight requests finish and closes idle connections — a request that was read is always answered, so a retry only ever replaces an attempt that never reached the application. Under SIGKILL, a request that has been read and processed loses its response, front retries it on another connection, and the work happens again.
+
+So `non_idempotent` is not safe or unsafe on its own. It is safe exactly to the degree that the backend never dies with a request in flight — which covers a graceful deploy and does not cover a crash, an OOM kill, or a node disappearing.
+
 ## What was not determined
 
 - What sets the 100ms floor. Whether it is a timer in nginx or the wait before old workers close their idle connections was not investigated
 - What separates the two error signatures. `recv() failed (104)` ran between 3 and 10 occurrences per run against several hundred of the other; the boundary was not traced
 - Whether idle-timeout closes surface at a different ratio. They did not at 1s against 1.5s gaps. A large pool with uneven use could in principle leave one connection idle while the front stays busy on others, and that was not built
-- Whether `non_idempotent` is safe in general. It did not duplicate here because the backend never read the request; a response lost after processing would duplicate, and that path could not be produced
+- What fraction of a real workload dies mid-request. The duplicate rate here (4,525 of 70,000) comes from SIGKILLing an instance every 0.4s and says nothing about production
+- Whether other runtimes shut down like Node's `server.close()`. gunicorn's sync worker does not keep connections alive at all, and Puma and php-fpm were not tried
 - The client-side cost of draining. Reloading front drops client keepalive connections, and nothing was measured on that side
 - The production rate. 0.4% here comes from reloading every 0.4s; a real deploy reloads once
 - Why the runner fails about four times less often per request. The rate depends on the host, and neither host was profiled to explain it

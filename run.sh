@@ -10,6 +10,17 @@
 #   ka-timeout           keepalive_timeout 5s on front's upstream
 #   idle-close           no reload, backend keepalive_timeout 1s
 #
+# Scenarios with a Node.js backend instead of nginx (it speaks keepalive and
+# closes idle connections on its own 5s timer, like most app servers):
+#
+#   app-baseline         64-way concurrency, the app restarted every 0.4s
+#   app-idle-close       no restarts, the app's own keepAliveTimeout closes them
+#   app-slow-nonidem     the app spends 50ms processing, POST, non_idempotent.
+#                        Stopped with SIGTERM, so in-flight requests finish
+#   app-slow-kill        same, but the instance is SIGKILLed mid-processing, so
+#                        the response is lost after the work was done. This is
+#                        the path where a retry can execute it twice
+#
 # Everything is kept under out/<scenario>/.
 set -uo pipefail
 sc="${1:?scenario}"
@@ -20,6 +31,10 @@ front_conf=conf/front-baseline.conf
 backend_conf=conf/backend.conf
 do_reload=1
 load=get
+backend_kind=nginx
+app_keepalive=""
+app_slow=0
+app_signal=TERM
 
 case "$sc" in
   baseline-concurrent) ;;
@@ -29,6 +44,10 @@ case "$sc" in
   nonidem-post) front_conf=conf/front-nonidem.conf; load=post ;;
   backend-noka) backend_conf=conf/backend-noka.conf ;;
   drain)       do_reload=2 ;;
+  app-baseline)     backend_kind=app; front_conf=conf/front-app.conf ;;
+  app-idle-close)   backend_kind=app; front_conf=conf/front-app.conf; app_keepalive=1000; do_reload=0; load=bursty ;;
+  app-slow-nonidem) backend_kind=app; front_conf=conf/front-app-nonidem.conf; app_slow=50; load=post ;;
+  app-slow-kill)    backend_kind=app; front_conf=conf/front-app-nonidem.conf; app_slow=50; load=post; app_signal=KILL ;;
   baseline-20s) ;;
   ka-timeout)  front_conf=conf/front-ka-timeout.conf ;;
   idle-close)  backend_conf=conf/backend-idle.conf; do_reload=0; load=bursty ;;
@@ -37,10 +56,31 @@ esac
 
 sed "s|/lab/out/|/lab/$o/|g" "$backend_conf" > "run/backend.conf"
 sed "s|/lab/out/|/lab/$o/|g" "$front_conf"   > "run/front.conf"
-cp "$front_conf" "$backend_conf" "$o/"
+cp "$front_conf" "$o/"
+[ "$backend_kind" = "nginx" ] && cp "$backend_conf" "$o/"
 
-nginx -c /lab/run/backend.conf -p /lab & sleep 1
-nginx -c /lab/run/front.conf   -p /lab & sleep 1
+# Two instances, so that retiring one always leaves the other serving. This is
+# what a real deploy looks like; restarting a single process would produce
+# connection-refused rather than the race under test.
+start_app() { # port
+  PORT="$1" SLOW_MS="$app_slow" KEEPALIVE_MS="$app_keepalive" LOG="/lab/$o/backend-access.log" \
+    node /lab/app/server.js 2>>"$o/backend-error.log" &
+  echo $! > "run/app-$1.pid"
+}
+stop_app() { # port
+  [ -f "run/app-$1.pid" ] || return 0
+  kill -"$app_signal" "$(cat "run/app-$1.pid")" 2>/dev/null
+  wait "$(cat "run/app-$1.pid")" 2>/dev/null
+  rm -f "run/app-$1.pid"
+}
+
+if [ "$backend_kind" = "app" ]; then
+  cp app/server.js "$o/"
+  start_app 8081; start_app 8082; sleep 1
+else
+  nginx -c /lab/run/backend.conf -p /lab & sleep 1
+fi
+nginx -c /lab/run/front.conf -p /lab & sleep 1
 
 tcpdump -i lo -n -s 128 "tcp port 8081 and (tcp[tcpflags] & (tcp-fin|tcp-rst|tcp-push) != 0)" \
   -w "$o/loopback.pcap" 2>"$o/tcpdump.log" &
@@ -72,6 +112,16 @@ if [ "$do_reload" = "2" ]; then
         cur=a
       fi
       date +%s.%N >> "$o/reload-times.txt"
+    done ) &
+  reload_pid=$!
+elif [ "$do_reload" = "1" ] && [ "$backend_kind" = "app" ]; then
+  # A deploy replaces one instance at a time, the other keeps serving
+  ( end=$((SECONDS + 60)); port=8081
+    while [ $SECONDS -lt $end ]; do
+      stop_app "$port"; start_app "$port"
+      date +%s.%N >> "$o/reload-times.txt"
+      [ "$port" = "8081" ] && port=8082 || port=8081
+      sleep 0.4
     done ) &
   reload_pid=$!
 elif [ "$do_reload" = "1" ]; then
@@ -112,13 +162,13 @@ esac
 nstat > "$o/nstat.txt"
 sleep 1
 kill $tcpdump_pid 2>/dev/null; wait $tcpdump_pid 2>/dev/null
-nginx -c /lab/run/front.conf   -p /lab -s quit 2>/dev/null
-nginx -c /lab/run/backend.conf -p /lab -s quit 2>/dev/null
+nginx -c /lab/run/front.conf -p /lab -s quit 2>/dev/null
+if [ "$backend_kind" = "app" ]; then stop_app 8081; stop_app 8082; else nginx -c /lab/run/backend.conf -p /lab -s quit 2>/dev/null; fi
 sleep 1
 
 {
   echo "scenario: $sc"
-  echo "front conf: $front_conf / backend conf: $backend_conf / reload: $do_reload / load: $load"
+  echo "front: $front_conf / backend: $backend_kind ${backend_conf} keepalive=${app_keepalive:-default} slow=${app_slow}ms signal=${app_signal} / reload: $do_reload / load: $load"
   if [ "$load" = "sequential" ]; then
     echo "requests: $(wc -l < "$o/sequential-codes.txt")"
     echo "502: $(grep -c '^502' "$o/sequential-codes.txt")"

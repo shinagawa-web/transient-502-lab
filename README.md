@@ -28,10 +28,16 @@ Output lands in `out/<scenario>/`.
 | idle-close | No reload, backend idle timeout 1s. Does it happen outside deploys |
 | baseline-20s | 20s of load, 50 reloads. Comparison point for drain |
 | drain | Retire the backend from the upstream before stopping it |
+| app-baseline | Node.js backend, instances restarted without draining |
+| app-idle-close | Node.js backend closing idle connections on its own timer |
+| app-slow-nonidem | Node.js spending 50ms per request, stopped with SIGTERM |
+| app-slow-kill | Same, but SIGKILLed. Retries execute the work twice |
 
 ## Setup
 
 A front nginx (`127.0.0.1:8080`, 4 workers, `keepalive 16`) proxies to a backend nginx (`127.0.0.1:8081`, 2 workers). Both run in one container so tcpdump on loopback sees the whole exchange. Load comes from `ab`.
+
+Scenarios prefixed `app-` swap the backend for Node.js 22 (`app/server.js`), running two instances on 8081 and 8082. It speaks keepalive, closes idle connections on its own timer, can be made to spend time processing, and logs every request the moment it arrives — so counting that log against what the client sent shows whether a retry executed the work twice.
 
 `conf/` holds the configs, `run.sh` drives the scenarios, `tools/analyze.py` aggregates what the logs and captures contain.
 
