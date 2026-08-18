@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""baseline-concurrent の out/ から、記事に引く数値を出す。
+"""Aggregate the figures worth quoting from a scenario's out/ directory.
 
   python3 tools/analyze.py out/baseline-concurrent
 """
@@ -24,13 +24,13 @@ def reload_delay():
             deltas.append((t - reloads[i]) * 1000); per[i] += 1
     deltas.sort()
     n = len(deltas)
-    print(f"reload {len(reloads)}回 / 502 {len(times)}件")
-    print(f"reload からの遅れ ms: min={deltas[0]:.0f} p50={deltas[n//2]:.0f} max={deltas[-1]:.0f}")
+    print(f"reloads {len(reloads)} / 502s {len(times)}")
+    print(f"delay after reload, ms: min={deltas[0]:.0f} p50={deltas[n//2]:.0f} max={deltas[-1]:.0f}")
     c = sorted(per.values())
-    print(f"reload 1回あたりの502: {c} 中央値 {c[len(c)//2]}")
+    print(f"502s per reload: {c} median {c[len(c)//2]}")
     for i in sorted(per)[:3]:
         ts = sorted(t for t in times if bisect.bisect_right(reloads, t)-1 == i)
-        print(f"  reload#{i}: {len(ts)}件 幅 {(ts[-1]-ts[0])*1000:.0f}ms")
+        print(f"  reload #{i}: {len(ts)} within {(ts[-1]-ts[0])*1000:.0f}ms")
 
 def packet_sequence():
     f = d/"loopback.txt"
@@ -61,9 +61,9 @@ def packet_sequence():
     if not hits: return
     a = sorted(h[0] for h in hits); b = sorted(h[1] for h in hits)
     n = len(a)
-    print(f"FIN → 次リクエスト → RST が取れた接続: {n}")
-    print(f"FIN→次リクエスト µs: min={a[0]:.0f} p50={a[n//2]:.0f} max={a[-1]:.0f}")
-    print(f"次リクエスト→RST µs: min={b[0]:.0f} p50={b[n//2]:.0f} max={b[-1]:.0f}")
+    print(f"connections showing FIN then next request then RST: {n}")
+    print(f"FIN to next request, us: min={a[0]:.0f} p50={a[n//2]:.0f} max={a[-1]:.0f}")
+    print(f"that request to RST, us: min={b[0]:.0f} p50={b[n//2]:.0f} max={b[-1]:.0f}")
     (d/"loopback-reset-flows.txt").write_text("\n\n".join(flows))
 
 def retries():
@@ -80,8 +80,8 @@ def retries():
         if n_att > 1: dist[n_att] += 1
     if not retried: return
     q = lambda v, p: sorted(v)[int(len(v)*p)]
-    print(f"再送があった行: {len(retried)} 内訳(試行:件数) {dict(sorted(dist.items()))}")
-    print(f"request_time 再送なし p50={q(normal,.5):.4f}s p99={q(normal,.99):.4f}s")
-    print(f"request_time 再送あり p50={q(retried,.5):.4f}s p99={q(retried,.99):.4f}s")
+    print(f"lines carrying a retry: {len(retried)} (attempts:count) {dict(sorted(dist.items()))}")
+    print(f"request_time without retry p50={q(normal,.5):.4f}s p99={q(normal,.99):.4f}s")
+    print(f"request_time with retry    p50={q(retried,.5):.4f}s p99={q(retried,.99):.4f}s")
 
 reload_delay(); packet_sequence(); retries()

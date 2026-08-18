@@ -1,38 +1,40 @@
-# keepalive 再利用 race のラボ
+# keepalive reuse race lab
 
-リバースプロキシが upstream への keepalive 接続をプールしている状態で、backend がその接続を閉じた直後に再利用すると502になる。本番で「再現しない」とされる散発502の一つ。この現象を再現し、どの対策が効くかを実測するためのラボ。
+A reverse proxy pools keepalive connections to its upstream. When the backend closes one and the proxy reuses it before noticing, the request gets no response and the client sees a 502. This is one of the sporadic 502s that people give up on because it never reproduces by hand.
 
-結果は `EVIDENCE.md`。CI で走らせた生ログは Actions の artifacts に残る。
+This lab reproduces it and measures which mitigations actually move it.
 
-## 走らせる
+Results are in `EVIDENCE.md`. Raw logs from CI runs are kept as workflow artifacts.
+
+## Run it
 
 ```
 docker build -t keepalive-lab .
 docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW -v "$PWD":/lab keepalive-lab bash /lab/run.sh baseline-concurrent
 ```
 
-出力は `out/<シナリオ>/` に出る。
+Output lands in `out/<scenario>/`.
 
-## シナリオ
+## Scenarios
 
-| 名前 | 何を見るか |
+| Name | What it shows |
 |---|---|
-| baseline-concurrent | 64並行 + backend を0.4秒ごとに reload。素の再現 |
-| baseline-sequential | 1本ずつ + 同じ reload。並行負荷が条件であることの対照 |
-| retry-get | `proxy_next_upstream` 既定 + GET。再送で502が隠れるか |
-| retry-post | 同上 + POST。非冪等メソッドが再送されないか |
-| nonidem-post | `non_idempotent` を足して POST も再送させる |
-| ka-timeout | front の upstream に `keepalive_timeout 5s`。reload 起因に効くか |
-| idle-close | reload なし・backend の idle timeout 1s。デプロイ以外でも出るか |
-| baseline-20s | 20秒の負荷 + reload 50回。drain との比較用 |
-| drain | 退役側を先に upstream から外してから停止 |
+| baseline-concurrent | 64-way concurrency, backend reloaded every 0.4s. The plain reproduction |
+| baseline-sequential | One request at a time, same reloads. Concurrency is the condition |
+| retry-get | Default `proxy_next_upstream`, GET load. Retries hide the 502 |
+| retry-post | Same config, POST load. Non-idempotent methods are not retried |
+| nonidem-post | `non_idempotent` added, so POST is retried too |
+| ka-timeout | `keepalive_timeout 5s` on front's upstream. Does it help against reloads |
+| idle-close | No reload, backend idle timeout 1s. Does it happen outside deploys |
+| baseline-20s | 20s of load, 50 reloads. Comparison point for drain |
+| drain | Retire the backend from the upstream before stopping it |
 
-## 構成
+## Setup
 
-front nginx（`127.0.0.1:8080`、worker 4、`keepalive 16`）が backend nginx（`127.0.0.1:8081`、worker 2）に proxy する。両方を1コンテナで動かし、loopback を tcpdump で見る。負荷は `ab`。
+A front nginx (`127.0.0.1:8080`, 4 workers, `keepalive 16`) proxies to a backend nginx (`127.0.0.1:8081`, 2 workers). Both run in one container so tcpdump on loopback sees the whole exchange. Load comes from `ab`.
 
-`conf/` が設定、`run.sh` がシナリオの実行、`tools/analyze.py` が採取した数値の集計。
+`conf/` holds the configs, `run.sh` drives the scenarios, `tools/analyze.py` aggregates what the logs and captures contain.
 
-## 実行環境について
+## About the numbers
 
-数値は環境で動く。`EVIDENCE.md` の初回計測は macOS の Docker Desktop（linuxkit VM）で取ったもので、CI（GitHub Actions の ubuntu-latest、4 vCPU / 16GB）で取り直している。nginx は公式イメージで 1.29.1 に固定してあるので、変わるのはホストだけ。
+They move with the environment. The first measurements in `EVIDENCE.md` were taken on Docker Desktop on macOS, which puts a linuxkit VM in the path. CI re-runs everything on GitHub Actions `ubuntu-latest` (4 vCPU, 16GB). nginx is pinned to 1.29.1 through the official image, so the host is the only variable between the two.

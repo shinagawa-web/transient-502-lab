@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# keepalive 再利用 race の再現とシナリオ比較。
+# Reproduces the keepalive reuse race and compares mitigations.
 #
 #   ./run.sh <scenario>
 #
-#   baseline-concurrent  64並行 + backend を0.4秒ごとに reload（素の再現）
-#   baseline-sequential  1本ずつ + 同じ reload（対照。条件が欠けると出ない）
-#   retry-get            proxy_next_upstream 既定 + GET 負荷（再送で隠れるか）
-#   retry-post           proxy_next_upstream 既定 + POST 負荷（非冪等は再送されないか）
-#   ka-timeout           front の upstream に keepalive_timeout 5s（reload 起因に効くか）
-#   idle-close           reload なし・backend の keepalive_timeout 1s（デプロイ以外でも出るか）
+#   baseline-concurrent  64-way concurrency, backend reloaded every 0.4s
+#   baseline-sequential  one request at a time, same reloads (control)
+#   retry-get            default proxy_next_upstream, GET (retries hide it)
+#   retry-post           default proxy_next_upstream, POST (not retried)
+#   ka-timeout           keepalive_timeout 5s on front's upstream
+#   idle-close           no reload, backend keepalive_timeout 1s
 #
-# ログは out/<scenario>/ に全部残す。
+# Everything is kept under out/<scenario>/.
 set -uo pipefail
 sc="${1:?scenario}"
 cd /lab
@@ -49,8 +49,8 @@ sleep 1
 nstat -n
 
 if [ "$do_reload" = "2" ]; then
-  # drain: 退役させる backend を先に front の upstream から外し（front の設定を差し替えて reload）、
-  # 旧 worker が消えてからプロセスを落とす
+  # drain: take the retiring backend out of front's upstream first (swap the
+  # config and reload), then stop it once the old workers are gone
   sed "s|/lab/out/|/lab/$o/|g" conf/backend-b.conf > run/backend-b.conf
   sed "s|/lab/out/|/lab/$o/|g" conf/front-baseline.conf > run/front-to-a.conf
   sed "s|/lab/out/|/lab/$o/|g" conf/front-b.conf        > run/front-to-b.conf
@@ -101,7 +101,7 @@ case "$load" in
           sleep 0.15
         done ;;
   bursty)
-        # reload はかけない。負荷を出しては止め、backend の idle timeout(1s) に接続を閉じさせる
+        # no reload. Bursts of load with gaps, letting the backend's 1s idle timeout close connections
         for round in $(seq 1 20); do
           ab -r -k -c 64 -n 2000 -s 30 http://127.0.0.1:8080/ >> "$o/ab.log" 2>&1
           sleep 1.5
@@ -129,7 +129,7 @@ sleep 1
   fi
   echo "--- front error log ---"
   sed -E 's/^[0-9\/: ]+\[error\] [0-9]+#[0-9]+: \*[0-9]+ //; s/, client:.*//' "$o/front-error.log" 2>/dev/null | sort | uniq -c | sort -rn
-  echo "backend が受けた回数: $(grep -c . "$o/backend-access.log" 2>/dev/null || echo -)"
+  echo "requests the backend received: $(grep -c . "$o/backend-access.log" 2>/dev/null || echo -)"
   echo "--- nstat ---"
   grep -E 'TcpEstabResets|TCPAbortOnData|TcpOutRsts|TcpActiveOpens|TcpPassiveOpens' "$o/nstat.txt"
 } | tee "$o/summary.txt"
