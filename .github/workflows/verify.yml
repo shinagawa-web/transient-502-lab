@@ -47,6 +47,7 @@ jobs:
         run: |
           docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW \
             -v "$PWD":/lab keepalive-lab bash /lab/run.sh ${{ matrix.scenario }}
+          sudo chown -R "$(id -u):$(id -g)" out
 
       - name: Summarize
         if: always()
@@ -60,10 +61,14 @@ jobs:
       - name: Extract the packet sequence
         if: matrix.scenario == 'baseline-concurrent'
         run: |
-          docker run --rm -v "$PWD":/lab keepalive-lab \
-            bash -c "tcpdump -r /lab/out/baseline-concurrent/loopback.pcap -n -tt 2>/dev/null" \
-            > out/baseline-concurrent/loopback.txt
-          python3 tools/analyze.py out/baseline-concurrent | tee -a "$GITHUB_STEP_SUMMARY"
+          docker run --rm -v "$PWD":/lab keepalive-lab bash -c \
+            "tcpdump -r /lab/out/baseline-concurrent/loopback.pcap -n -tt 2>/dev/null > /lab/out/baseline-concurrent/loopback.txt"
+          sudo chown -R "$(id -u):$(id -g)" out
+          {
+            echo '```'
+            python3 tools/analyze.py out/baseline-concurrent
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Upload logs
         if: always()
