@@ -4,7 +4,7 @@ A proxy pools keepalive connections to its backend. When the backend closes one 
 
 This lab reproduces it and measures which mitigations move it.
 
-Results are in `EVIDENCE.md`. Raw logs from CI runs are kept as workflow artifacts.
+`EVIDENCE.md` records what each scenario establishes. The numbers live in the CI runs: each job's summary carries the aggregated figures and its artifacts carry the raw logs, so nothing here has to be kept in sync by hand.
 
 ## Run it
 
@@ -47,4 +47,4 @@ The default turnover is `GET /__close-idle`, which makes the app drop its idle k
 
 ## About the numbers
 
-They move with the environment. `EVIDENCE.md` was measured on Docker Desktop on macOS; CI re-runs everything on GitHub Actions `ubuntu-latest` (4 vCPU, 16GB). nginx and Node are pinned through their official images, so the host is the only variable.
+They move between runs and between hosts, so treat them as magnitudes rather than constants. CI runs everything on GitHub Actions `ubuntu-latest` (4 vCPU, 16GB), with nginx and Node pinned through their official images.
