@@ -14,6 +14,7 @@
 #   baseline-sequential  one request at a time. Concurrency is the condition
 #   retry-get            default proxy_next_upstream, GET. Retries hide it
 #   retry-post           default proxy_next_upstream, POST. Not retried
+#   nonidem-post         retry-post plus non_idempotent, changing nothing else
 #   ka-timeout           keepalive_timeout 5s on the upstream. Does it help
 #   idle-close           no turnover; the app's own 1s idle timeout closes them
 #   backend-noka         the app answers Connection: close, so nothing is pooled
@@ -44,6 +45,7 @@ case "$sc" in
   baseline-sequential) load=sequential ;;
   retry-get)      front_conf=conf/front-retry.conf ;;
   retry-post)     front_conf=conf/front-retry.conf; load=post ;;
+  nonidem-post)   front_conf=conf/front-nonidem.conf; load=post ;;
   ka-timeout)     front_conf=conf/front-ka-timeout.conf ;;
   idle-close)     turnover=none; app_keepalive=1000; load=bursty ;;
   backend-noka)   app_nokeepalive=1 ;;

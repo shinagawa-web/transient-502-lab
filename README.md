@@ -23,6 +23,7 @@ Output lands in `out/<scenario>/`.
 | baseline-sequential | One request at a time. Concurrency is the condition |
 | retry-get | Default `proxy_next_upstream`, GET. Retries hide the 502 |
 | retry-post | Default `proxy_next_upstream`, POST. Not retried, so it stays visible |
+| nonidem-post | retry-post plus `non_idempotent`, nothing else changed |
 | ka-timeout | `keepalive_timeout 5s` on the upstream. Does not help |
 | idle-close | No turnover; the app's own idle timeout closes connections |
 | backend-noka | The app answers `Connection: close`, so nothing is pooled |

@@ -20,6 +20,7 @@ jobs:
           - baseline-sequential
           - retry-get
           - retry-post
+          - nonidem-post
           - ka-timeout
           - idle-close
           - backend-noka
