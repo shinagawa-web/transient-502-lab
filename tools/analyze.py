@@ -60,9 +60,12 @@ def packet_sequence():
                 for j in range(i+1, len(ev)):
                     t2, d2, fl2, _ = ev[j]
                     if d2 == "front->be" and "P" in fl2:
+                        # the reuse has to follow the FIN closely, otherwise this
+                        # is a later, unrelated connection on a recycled port
+                        if (t2 - t) > 0.05: break
                         for k in range(j+1, len(ev)):
                             t3, _, fl3, _ = ev[k]
-                            if "R" in fl3:
+                            if "R" in fl3 and (t3 - t2) <= 0.05:
                                 hits.append(((t2-t)*1e6, (t3-t2)*1e6))
                                 if len(flows) < 10 and len(ev) <= 40:
                                     flows.append(f"# 127.0.0.1:{port} <-> 127.0.0.1:8081\n" + "\n".join(x[3] for x in ev))

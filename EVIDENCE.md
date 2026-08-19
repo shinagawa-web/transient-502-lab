@@ -48,9 +48,9 @@ recv() failed (104: Connection reset by peer) while reading response header from
 
 For the baseline run with 213 502s, the split was 204 and 9.
 
-The window is under a millisecond. On a single 4-tuple, tcpdump shows the backend's FIN, then the proxy's next request a median of 1,145µs later (range 21–3,301µs), then the RST a median of 2µs after that (maximum 29µs), in 155 connections.
+The window is about a millisecond. On a single 4-tuple, tcpdump shows the backend's FIN, then the proxy's next request a median of 1,261µs later (range 3–9,370µs), then the RST a median of 3µs after that (maximum 65µs), across 202 connections. Sequences where the reuse or the reset came more than 50ms later are excluded: a recycled ephemeral port otherwise matches an unrelated connection.
 
-Failures arrive in bursts at the moment connections are closed. 502s land 3–12ms after a turnover, median 4ms, 15–20 per turnover, each burst inside 2–4ms.
+Failures arrive in bursts at the moment connections are closed, and the delay is not a constant. 502s landed 3–12ms after a turnover on the Mac (median 4ms, 15–20 per turnover, each burst inside 2–4ms) and 15–36ms on the runner (median 28ms, median 27 per turnover).
 
 Retries remove the 502 without removing the failure. With the default `proxy_next_upstream`, GET saw zero 502s while the error log still recorded 177 failures. One client request is not one upstream attempt, and the access log says so once `$upstream_addr` and `$upstream_status` are in the format:
 
@@ -90,6 +90,29 @@ Draining is the only one with neither. Once the instance is out of the upstream,
 So `non_idempotent` is not safe or unsafe on its own. It is safe exactly to the degree that the backend never dies holding a request — which a drained shutdown guarantees and a kill timeout, a crash or an OOM kill do not.
 
 Restarting an instance without draining it produces mostly a plain outage rather than the race: 1,426 502s, of which 1,363 were `connect() failed (111: Connection refused)`.
+
+## The same runs on a Linux runner
+
+Re-run on GitHub Actions `ubuntu-latest` (4 vCPU, 16GB) with the same images. Run 32203817281; raw logs are in that run's artifacts.
+
+| Scenario | macOS / Docker Desktop | ubuntu-latest |
+|---|---|---|
+| baseline-concurrent | 213 in 70,000 (13 turnovers) | 182 in 70,000 (8) |
+| baseline-sequential | 0, 0, 1 in 400 | 0 in 400 |
+| retry-get | 0 502s | 0 502s |
+| retry-post | 179 | 112 |
+| ka-timeout | 170 (baseline 213) | 198 (baseline 182) |
+| idle-close | 0 | 0 |
+| backend-noka | 0 | 0 |
+| drain | 0 | 0 |
+| deploy-restart | 1,426 | 5,711 |
+| slow-term | 0 duplicates, 4 turnovers | 0 duplicates, 3 turnovers |
+| slow-term-timeout | 624 duplicates | 667 duplicates |
+| slow-kill | 3,862 duplicates | 4,616 duplicates |
+
+Every conclusion holds. Per turnover the baseline is comparable (16 against 23), unlike the earlier nginx-backed version of this lab where the runner failed about four times less often.
+
+What does not carry is the delay between closing connections and the 502s: 4ms on the Mac against 28ms on the runner. It is milliseconds either way, not a constant to look up.
 
 ## What was not determined
 
