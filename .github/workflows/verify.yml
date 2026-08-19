@@ -61,15 +61,16 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Extract the packet sequence
-        if: matrix.scenario == 'baseline-concurrent'
+      - name: Aggregate
         run: |
-          docker run --rm -v "$PWD":/lab keepalive-lab bash -c \
-            "tcpdump -r /lab/out/baseline-concurrent/loopback.pcap -n -tt 2>/dev/null > /lab/out/baseline-concurrent/loopback.txt"
-          sudo chown -R "$(id -u):$(id -g)" out
+          if [ -f "out/${{ matrix.scenario }}/loopback.pcap" ]; then
+            docker run --rm -v "$PWD":/lab keepalive-lab bash -c \
+              "tcpdump -r /lab/out/${{ matrix.scenario }}/loopback.pcap -n -tt 2>/dev/null > /lab/out/${{ matrix.scenario }}/loopback.txt"
+            sudo chown -R "$(id -u):$(id -g)" out
+          fi
           {
             echo '```'
-            python3 tools/analyze.py out/baseline-concurrent
+            python3 tools/analyze.py "out/${{ matrix.scenario }}"
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
 

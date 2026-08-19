@@ -98,4 +98,15 @@ def retries():
     print(f"request_time without retry p50={q(normal,.5):.4f}s p99={q(normal,.99):.4f}s")
     print(f"request_time with retry    p50={q(retried,.5):.4f}s p99={q(retried,.99):.4f}s")
 
-reload_delay(); packet_sequence(); retries()
+def duplicates():
+    f = d/"backend-access.log"
+    if not f.exists(): return
+    got = sum(1 for ln in f.read_text().splitlines() if "__close-idle" not in ln)
+    sent = 0
+    a = d/"front-access.log"
+    if a.exists():
+        sent = sum(1 for ln in a.read_text().splitlines() if ln.strip())
+    if sent and got != sent:
+        print(f"client sent {sent} / backend received {got} / difference {got - sent}")
+
+reload_delay(); packet_sequence(); retries(); duplicates()
