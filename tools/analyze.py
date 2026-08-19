@@ -8,29 +8,40 @@ import sys, re, bisect, collections, pathlib
 d = pathlib.Path(sys.argv[1])
 
 def reload_delay():
-    f = d/"reload-times.txt"
+    f = d/"turnover-times.txt"
     if not f.exists(): return
-    reloads = sorted(float(x) for x in f.read_text().split())
+    # a turnover line is "<epoch> <port>"; attribute each 502 to the most recent
+    # turnover of the instance the 502 actually came from
+    turns = collections.defaultdict(list)
+    for ln in f.read_text().splitlines():
+        g = ln.split()
+        if len(g) == 2: turns[g[1]].append(float(g[0]))
+        elif len(g) == 1: turns["?"].append(float(g[0]))
+    for v in turns.values(): v.sort()
     times = []
     for ln in (d/"front-access.log").read_text().splitlines():
         g = ln.split()
         if len(g) > 1 and g[1] == "502":
-            times.append(float(g[0]))
-    if not (reloads and times): return
+            port = g[3].split(":")[-1].rstrip(",") if len(g) > 3 else "?"
+            times.append((float(g[0]), port))
+    if not (turns and times): return
     deltas, per = [], collections.Counter()
-    for t in times:
-        i = bisect.bisect_right(reloads, t) - 1
+    for t, port in times:
+        seq = turns.get(port) or next(iter(turns.values()))
+        i = bisect.bisect_right(seq, t) - 1
         if i >= 0:
-            deltas.append((t - reloads[i]) * 1000); per[i] += 1
+            deltas.append((t - seq[i]) * 1000); per[(port, i)] += 1
     deltas.sort()
     n = len(deltas)
-    print(f"reloads {len(reloads)} / 502s {len(times)}")
-    print(f"delay after reload, ms: min={deltas[0]:.0f} p50={deltas[n//2]:.0f} max={deltas[-1]:.0f}")
+    print(f"turnovers {sum(len(v) for v in turns.values())} / 502s {len(times)}")
+    print(f"delay after turnover, ms: min={deltas[0]:.0f} p50={deltas[n//2]:.0f} max={deltas[-1]:.0f}")
     c = sorted(per.values())
-    print(f"502s per reload: {c} median {c[len(c)//2]}")
-    for i in sorted(per)[:3]:
-        ts = sorted(t for t in times if bisect.bisect_right(reloads, t)-1 == i)
-        print(f"  reload #{i}: {len(ts)} within {(ts[-1]-ts[0])*1000:.0f}ms")
+    print(f"502s per turnover: {c} median {c[len(c)//2]}")
+    for key in sorted(per)[:3]:
+        port, i = key
+        seq = turns[port]
+        ts = sorted(t for t, p_ in times if p_ == port and bisect.bisect_right(seq, t)-1 == i)
+        print(f"  {port} turnover #{i}: {len(ts)} within {(ts[-1]-ts[0])*1000:.0f}ms")
 
 def packet_sequence():
     f = d/"loopback.txt"
@@ -40,7 +51,7 @@ def packet_sequence():
         m = re.match(r'(\d+\.\d+) IP 127\.0\.0\.1\.(\d+) > 127\.0\.0\.1\.(\d+): Flags \[([^\]]+)\]', ln)
         if not m: continue
         t, s_, d_, fl = float(m.group(1)), m.group(2), m.group(3), m.group(4)
-        by_port[s_ if d_ == "8081" else d_].append((t, "front->be" if d_ == "8081" else "be->front", fl, ln))
+        by_port[s_ if d_ in ("8081","8082") else d_].append((t, "front->be" if d_ in ("8081","8082") else "be->front", fl, ln))
     hits, flows = [], []
     for port, ev in by_port.items():
         ev.sort()

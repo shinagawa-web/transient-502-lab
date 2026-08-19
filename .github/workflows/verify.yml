@@ -20,15 +20,14 @@ jobs:
           - baseline-sequential
           - retry-get
           - retry-post
-          - nonidem-post
           - ka-timeout
           - idle-close
-          - baseline-20s
+          - backend-noka
           - drain
-          - app-baseline
-          - app-idle-close
-          - app-slow-nonidem
-          - app-slow-kill
+          - deploy-restart
+          - slow-term
+          - slow-term-timeout
+          - slow-kill
     steps:
       - uses: actions/checkout@v4
 
