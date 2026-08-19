@@ -35,6 +35,7 @@ front_conf=conf/front.conf
 turnover=close-idle      # close-idle | none | drain | restart | signal
 signal=TERM
 load=get
+turnover_duration=60
 app_keepalive=""
 app_slow=0
 app_nokeepalive=0
@@ -43,6 +44,9 @@ app_shutdown_kill=0
 case "$sc" in
   baseline-concurrent) ;;
   baseline-sequential) load=sequential ;;
+  baseline-sequential-c1) load=sequential_c1; turnover_duration=300 ;;
+  baseline-sequential-noturnover) load=sequential_c1; turnover=none ;;
+  baseline-concurrent-noturnover) turnover=none ;;
   retry-get)      front_conf=conf/front-retry.conf ;;
   retry-post)     front_conf=conf/front-retry.conf; load=post ;;
   nonidem-post)   front_conf=conf/front-nonidem.conf; load=post ;;
@@ -87,7 +91,7 @@ turn() { echo "$(date +%s.%N) $1" >> "$o/turnover-times.txt"; }
 
 case "$turnover" in
   close-idle)
-    ( end=$((SECONDS + 60)); port=8081
+    ( end=$((SECONDS + turnover_duration)); port=8081
       while [ $SECONDS -lt $end ]; do
         turn "$port"; curl -s -o /dev/null "http://127.0.0.1:$port/__close-idle"
         [ "$port" = "8081" ] && port=8082 || port=8081
@@ -137,6 +141,8 @@ case "$load" in
           curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/ >> "$o/sequential-codes.txt"
           sleep 0.15
         done ;;
+  sequential_c1)
+        ab -r -k -c 1 -n 70000 -s 30 http://127.0.0.1:8080/ > "$o/ab.log" 2>&1 ;;
   bursty)
         for round in $(seq 1 20); do
           ab -r -k -c 64 -n 2000 -s 30 http://127.0.0.1:8080/ >> "$o/ab.log" 2>&1
