@@ -53,49 +53,6 @@ jobs:
           path: out/baseline-concurrent
           retention-days: 90
 
-  baseline-sequential:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Record the environment
-        run: |
-          {
-            echo '```'
-            uname -srm; nproc; free -h | head -2
-            docker version --format 'docker {{.Server.Version}}'
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Build
-        run: docker build -t keepalive-lab .
-      - name: Run
-        run: |
-          docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW \
-            -v "$PWD":/lab keepalive-lab bash /lab/run.sh baseline-sequential
-          sudo chown -R "$(id -u):$(id -g)" out
-      - name: Summarize
-        if: always()
-        run: |
-          {
-            echo '```'
-            cat out/baseline-sequential/summary.txt 2>/dev/null || echo "no summary"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Aggregate
-        run: |
-          if [ -f out/baseline-sequential/loopback.pcap ]; then
-            docker run --rm -v "$PWD":/lab keepalive-lab bash -c \
-              "tcpdump -r /lab/out/baseline-sequential/loopback.pcap -n -tt 2>/dev/null > /lab/out/baseline-sequential/loopback.txt"
-            sudo chown -R "$(id -u):$(id -g)" out
-          fi
-          { echo '```'; python3 tools/analyze.py out/baseline-sequential; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: baseline-sequential
-          path: out/baseline-sequential
-          retention-days: 90
-
   retry-get:
     runs-on: ubuntu-latest
     steps:
@@ -266,49 +223,6 @@ jobs:
         with:
           name: ka-timeout
           path: out/ka-timeout
-          retention-days: 90
-
-  backend-noka:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Record the environment
-        run: |
-          {
-            echo '```'
-            uname -srm; nproc; free -h | head -2
-            docker version --format 'docker {{.Server.Version}}'
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Build
-        run: docker build -t keepalive-lab .
-      - name: Run
-        run: |
-          docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW \
-            -v "$PWD":/lab keepalive-lab bash /lab/run.sh backend-noka
-          sudo chown -R "$(id -u):$(id -g)" out
-      - name: Summarize
-        if: always()
-        run: |
-          {
-            echo '```'
-            cat out/backend-noka/summary.txt 2>/dev/null || echo "no summary"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Aggregate
-        run: |
-          if [ -f out/backend-noka/loopback.pcap ]; then
-            docker run --rm -v "$PWD":/lab keepalive-lab bash -c \
-              "tcpdump -r /lab/out/backend-noka/loopback.pcap -n -tt 2>/dev/null > /lab/out/backend-noka/loopback.txt"
-            sudo chown -R "$(id -u):$(id -g)" out
-          fi
-          { echo '```'; python3 tools/analyze.py out/backend-noka; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-noka
-          path: out/backend-noka
           retention-days: 90
 
   drain:
