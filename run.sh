@@ -1,38 +1,11 @@
 #!/usr/bin/env bash
-# Reproduces the keepalive reuse race and compares mitigations.
-#
-#   ./run.sh <scenario>
-#
-# The backend is an application server (Node.js, app/server.js), two instances
-# on 8081 and 8082, which is what sits behind a proxy in practice.
-#
-# Unless a scenario says otherwise, the turnover is /__close-idle every 0.4s:
-# the app drops its idle keepalive connections at once, the way a process
-# replacement does to the proxy's pool, without taking the listener away.
-#
-#   baseline-concurrent  64-way concurrency. The reproduction
-#   baseline-sequential  one request at a time. Concurrency is the condition
-#   retry-get            default proxy_next_upstream, GET. Retries hide it
-#   retry-post           default proxy_next_upstream, POST. Not retried
-#   nonidem-post         retry-post plus non_idempotent, changing nothing else
-#   ka-timeout           keepalive_timeout 200ms on the upstream. Does it help
-#   idle-close           no turnover; the app's own 1s idle timeout closes them
-#   backend-noka         the app answers Connection: close, so nothing is pooled
-#   drain                retire an instance from the upstream before stopping it
-#   deploy-restart       restart an instance without retiring it first
-#   slow-term            50ms of processing, SIGTERM turnover, non_idempotent.
-#                        close() waits for connections that never go idle
-#   slow-term-timeout    same, but the process exits 2s after SIGTERM regardless
-#   slow-kill            same, but SIGKILL
-#
-# Everything is kept under out/<scenario>/.
 set -uo pipefail
 sc="${1:?scenario}"
 cd /lab
 o="out/$sc"; rm -rf "$o"; mkdir -p "$o" run
 
 front_conf=conf/front.conf
-turnover=close-idle      # close-idle | none | drain | restart | signal
+turnover=close-idle
 signal=TERM
 load=get
 turnover_duration=60
@@ -61,12 +34,12 @@ case "$sc" in
   *) echo "unknown scenario: $sc"; exit 2 ;;
 esac
 
-start_app() { # port
+start_app() {
   PORT="$1" SLOW_MS="$app_slow" KEEPALIVE_MS="$app_keepalive" NO_KEEPALIVE="$app_nokeepalive" \
     SHUTDOWN_KILL_MS="$app_shutdown_kill" LOG="/lab/$o/backend-access.log" node /lab/app/server.js 2>>"$o/backend-error.log" &
   echo $! > "run/app-$1.pid"
 }
-stop_app() { # port signal
+stop_app() {
   [ -f "run/app-$1.pid" ] || return 0
   kill -"${2:-TERM}" "$(cat "run/app-$1.pid")" 2>/dev/null
   wait "$(cat "run/app-$1.pid")" 2>/dev/null
@@ -112,8 +85,6 @@ case "$turnover" in
         sleep 0.4
       done ) & turnover_pid=$! ;;
   drain)
-    # Take the instance out of the upstream, reload the proxy so its old workers
-    # (and their pools) go away, and only then stop the process.
     ( end=$((SECONDS + 60)); port=8081
       while [ $SECONDS -lt $end ]; do
         if [ "$port" = "8081" ]; then cp run/front-only-b.conf run/front.conf
@@ -121,7 +92,7 @@ case "$turnover" in
         nginx -c /lab/run/front.conf -p /lab -s reload 2>>"$o/reload.log"
         sleep 0.5
         stop_app "$port" TERM; start_app "$port"
-        cp run/front-only-a.conf run/front.conf   # placeholder, restored below
+        cp run/front-only-a.conf run/front.conf
         sed "s|/lab/out/|/lab/$o/|g" "$front_conf" > run/front.conf
         nginx -c /lab/run/front.conf -p /lab -s reload 2>>"$o/reload.log"
         turn "$port"
