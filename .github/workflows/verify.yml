@@ -10,75 +10,346 @@ on:
       - '.github/workflows/verify.yml'
 
 jobs:
-  scenario:
+  baseline-concurrent:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        scenario:
-          - baseline-concurrent
-          - baseline-sequential
-          - retry-get
-          - retry-post
-          - nonidem-post
-          - ka-timeout
-          - idle-close
-          - backend-noka
-          - drain
-          - deploy-restart
-          - slow-term
-          - slow-term-timeout
-          - slow-kill
     steps:
       - uses: actions/checkout@v4
-
       - name: Record the environment
         run: |
           {
-            echo "## ${{ matrix.scenario }}"
             echo '```'
-            uname -srm
-            nproc
-            free -h | head -2
+            uname -srm; nproc; free -h | head -2
             docker version --format 'docker {{.Server.Version}}'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-
       - name: Build
         run: docker build -t keepalive-lab .
-
       - name: Run
         run: |
           docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW \
-            -v "$PWD":/lab keepalive-lab bash /lab/run.sh ${{ matrix.scenario }}
+            -v "$PWD":/lab keepalive-lab bash /lab/run.sh baseline-concurrent
           sudo chown -R "$(id -u):$(id -g)" out
-
       - name: Summarize
         if: always()
         run: |
           {
             echo '```'
-            cat "out/${{ matrix.scenario }}/summary.txt" 2>/dev/null || echo "no summary"
+            cat out/baseline-concurrent/summary.txt 2>/dev/null || echo "no summary"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-
       - name: Aggregate
         run: |
-          if [ -f "out/${{ matrix.scenario }}/loopback.pcap" ]; then
+          if [ -f out/baseline-concurrent/loopback.pcap ]; then
             docker run --rm -v "$PWD":/lab keepalive-lab bash -c \
-              "tcpdump -r /lab/out/${{ matrix.scenario }}/loopback.pcap -n -tt 2>/dev/null > /lab/out/${{ matrix.scenario }}/loopback.txt"
+              "tcpdump -r /lab/out/baseline-concurrent/loopback.pcap -n -tt 2>/dev/null > /lab/out/baseline-concurrent/loopback.txt"
             sudo chown -R "$(id -u):$(id -g)" out
           fi
-          {
-            echo '```'
-            python3 tools/analyze.py "out/${{ matrix.scenario }}"
-            echo '```'
-          } | tee -a "$GITHUB_STEP_SUMMARY"
-
+          { echo '```'; python3 tools/analyze.py out/baseline-concurrent; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.scenario }}
-          path: out/${{ matrix.scenario }}
+          name: baseline-concurrent
+          path: out/baseline-concurrent
+          retention-days: 90
+
+  baseline-sequential:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record the environment
+        run: |
+          {
+            echo '```'
+            uname -srm; nproc; free -h | head -2
+            docker version --format 'docker {{.Server.Version}}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Build
+        run: docker build -t keepalive-lab .
+      - name: Run
+        run: |
+          docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW \
+            -v "$PWD":/lab keepalive-lab bash /lab/run.sh baseline-sequential
+          sudo chown -R "$(id -u):$(id -g)" out
+      - name: Summarize
+        if: always()
+        run: |
+          {
+            echo '```'
+            cat out/baseline-sequential/summary.txt 2>/dev/null || echo "no summary"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Aggregate
+        run: |
+          if [ -f out/baseline-sequential/loopback.pcap ]; then
+            docker run --rm -v "$PWD":/lab keepalive-lab bash -c \
+              "tcpdump -r /lab/out/baseline-sequential/loopback.pcap -n -tt 2>/dev/null > /lab/out/baseline-sequential/loopback.txt"
+            sudo chown -R "$(id -u):$(id -g)" out
+          fi
+          { echo '```'; python3 tools/analyze.py out/baseline-sequential; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: baseline-sequential
+          path: out/baseline-sequential
+          retention-days: 90
+
+  retry-get:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record the environment
+        run: |
+          {
+            echo '```'
+            uname -srm; nproc; free -h | head -2
+            docker version --format 'docker {{.Server.Version}}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Build
+        run: docker build -t keepalive-lab .
+      - name: Run
+        run: |
+          docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW \
+            -v "$PWD":/lab keepalive-lab bash /lab/run.sh retry-get
+          sudo chown -R "$(id -u):$(id -g)" out
+      - name: Summarize
+        if: always()
+        run: |
+          {
+            echo '```'
+            cat out/retry-get/summary.txt 2>/dev/null || echo "no summary"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Aggregate
+        run: |
+          if [ -f out/retry-get/loopback.pcap ]; then
+            docker run --rm -v "$PWD":/lab keepalive-lab bash -c \
+              "tcpdump -r /lab/out/retry-get/loopback.pcap -n -tt 2>/dev/null > /lab/out/retry-get/loopback.txt"
+            sudo chown -R "$(id -u):$(id -g)" out
+          fi
+          { echo '```'; python3 tools/analyze.py out/retry-get; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retry-get
+          path: out/retry-get
+          retention-days: 90
+
+  retry-post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record the environment
+        run: |
+          {
+            echo '```'
+            uname -srm; nproc; free -h | head -2
+            docker version --format 'docker {{.Server.Version}}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Build
+        run: docker build -t keepalive-lab .
+      - name: Run
+        run: |
+          docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW \
+            -v "$PWD":/lab keepalive-lab bash /lab/run.sh retry-post
+          sudo chown -R "$(id -u):$(id -g)" out
+      - name: Summarize
+        if: always()
+        run: |
+          {
+            echo '```'
+            cat out/retry-post/summary.txt 2>/dev/null || echo "no summary"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Aggregate
+        run: |
+          if [ -f out/retry-post/loopback.pcap ]; then
+            docker run --rm -v "$PWD":/lab keepalive-lab bash -c \
+              "tcpdump -r /lab/out/retry-post/loopback.pcap -n -tt 2>/dev/null > /lab/out/retry-post/loopback.txt"
+            sudo chown -R "$(id -u):$(id -g)" out
+          fi
+          { echo '```'; python3 tools/analyze.py out/retry-post; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retry-post
+          path: out/retry-post
+          retention-days: 90
+
+  nonidem-post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record the environment
+        run: |
+          {
+            echo '```'
+            uname -srm; nproc; free -h | head -2
+            docker version --format 'docker {{.Server.Version}}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Build
+        run: docker build -t keepalive-lab .
+      - name: Run
+        run: |
+          docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW \
+            -v "$PWD":/lab keepalive-lab bash /lab/run.sh nonidem-post
+          sudo chown -R "$(id -u):$(id -g)" out
+      - name: Summarize
+        if: always()
+        run: |
+          {
+            echo '```'
+            cat out/nonidem-post/summary.txt 2>/dev/null || echo "no summary"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Aggregate
+        run: |
+          if [ -f out/nonidem-post/loopback.pcap ]; then
+            docker run --rm -v "$PWD":/lab keepalive-lab bash -c \
+              "tcpdump -r /lab/out/nonidem-post/loopback.pcap -n -tt 2>/dev/null > /lab/out/nonidem-post/loopback.txt"
+            sudo chown -R "$(id -u):$(id -g)" out
+          fi
+          { echo '```'; python3 tools/analyze.py out/nonidem-post; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nonidem-post
+          path: out/nonidem-post
+          retention-days: 90
+
+  ka-timeout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record the environment
+        run: |
+          {
+            echo '```'
+            uname -srm; nproc; free -h | head -2
+            docker version --format 'docker {{.Server.Version}}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Build
+        run: docker build -t keepalive-lab .
+      - name: Run
+        run: |
+          docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW \
+            -v "$PWD":/lab keepalive-lab bash /lab/run.sh ka-timeout
+          sudo chown -R "$(id -u):$(id -g)" out
+      - name: Summarize
+        if: always()
+        run: |
+          {
+            echo '```'
+            cat out/ka-timeout/summary.txt 2>/dev/null || echo "no summary"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Aggregate
+        run: |
+          if [ -f out/ka-timeout/loopback.pcap ]; then
+            docker run --rm -v "$PWD":/lab keepalive-lab bash -c \
+              "tcpdump -r /lab/out/ka-timeout/loopback.pcap -n -tt 2>/dev/null > /lab/out/ka-timeout/loopback.txt"
+            sudo chown -R "$(id -u):$(id -g)" out
+          fi
+          { echo '```'; python3 tools/analyze.py out/ka-timeout; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ka-timeout
+          path: out/ka-timeout
+          retention-days: 90
+
+  backend-noka:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record the environment
+        run: |
+          {
+            echo '```'
+            uname -srm; nproc; free -h | head -2
+            docker version --format 'docker {{.Server.Version}}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Build
+        run: docker build -t keepalive-lab .
+      - name: Run
+        run: |
+          docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW \
+            -v "$PWD":/lab keepalive-lab bash /lab/run.sh backend-noka
+          sudo chown -R "$(id -u):$(id -g)" out
+      - name: Summarize
+        if: always()
+        run: |
+          {
+            echo '```'
+            cat out/backend-noka/summary.txt 2>/dev/null || echo "no summary"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Aggregate
+        run: |
+          if [ -f out/backend-noka/loopback.pcap ]; then
+            docker run --rm -v "$PWD":/lab keepalive-lab bash -c \
+              "tcpdump -r /lab/out/backend-noka/loopback.pcap -n -tt 2>/dev/null > /lab/out/backend-noka/loopback.txt"
+            sudo chown -R "$(id -u):$(id -g)" out
+          fi
+          { echo '```'; python3 tools/analyze.py out/backend-noka; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-noka
+          path: out/backend-noka
+          retention-days: 90
+
+  drain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record the environment
+        run: |
+          {
+            echo '```'
+            uname -srm; nproc; free -h | head -2
+            docker version --format 'docker {{.Server.Version}}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Build
+        run: docker build -t keepalive-lab .
+      - name: Run
+        run: |
+          docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW \
+            -v "$PWD":/lab keepalive-lab bash /lab/run.sh drain
+          sudo chown -R "$(id -u):$(id -g)" out
+      - name: Summarize
+        if: always()
+        run: |
+          {
+            echo '```'
+            cat out/drain/summary.txt 2>/dev/null || echo "no summary"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Aggregate
+        run: |
+          if [ -f out/drain/loopback.pcap ]; then
+            docker run --rm -v "$PWD":/lab keepalive-lab bash -c \
+              "tcpdump -r /lab/out/drain/loopback.pcap -n -tt 2>/dev/null > /lab/out/drain/loopback.txt"
+            sudo chown -R "$(id -u):$(id -g)" out
+          fi
+          { echo '```'; python3 tools/analyze.py out/drain; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drain
+          path: out/drain
           retention-days: 90
