@@ -16,5 +16,3 @@ Output lands in `out/<scenario>/`. Scenario names are in `run.sh`.
 ## Results
 
 Each CI job's summary has the aggregated figures for that scenario. Artifacts carry the raw logs.
-
-`EVIDENCE.md` records what each scenario establishes.
