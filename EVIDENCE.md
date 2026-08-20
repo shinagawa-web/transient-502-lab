@@ -23,7 +23,7 @@ The default disturbance is `GET /__close-idle`, which makes the app drop its idl
 | retry-get | The default `proxy_next_upstream` retries idempotent methods, so the 502 count understates the failures. The error log keeps the real count, and the access log shows the retry once `$upstream_status` is in the format |
 | retry-post | Non-idempotent methods are not retried, so their failures surface as 502s |
 | nonidem-post | Adding `non_idempotent`, and nothing else, takes those 502s to zero. Differs from retry-post only by the flag |
-| ka-timeout | An upstream `keepalive_timeout 400ms` does not help. It governs how long the proxy intends to hold an idle connection, and the backend closes without waiting on that |
+| ka-timeout | An upstream `keepalive_timeout 200ms` does not help. It governs how long the proxy intends to hold an idle connection, and the backend closes without waiting on that |
 | idle-close | An idle timeout alone produces nothing. For a connection to sit idle long enough to time out, the proxy has to be idle too, and an idle proxy notices the FIN in time |
 | backend-noka | Answering `Connection: close` removes the failure entirely, at one TCP connection per request |
 | drain | Taking the instance out of the upstream before stopping it produces neither 502s nor duplicates. The pool belongs to the worker process, so it dies with it |
