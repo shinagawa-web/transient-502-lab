@@ -24,7 +24,7 @@ Output lands in `out/<scenario>/`.
 | retry-get | Default `proxy_next_upstream`, GET. Retries hide the 502 |
 | retry-post | Default `proxy_next_upstream`, POST. Not retried, so it stays visible |
 | nonidem-post | retry-post plus `non_idempotent`, nothing else changed |
-| ka-timeout | `keepalive_timeout 5s` on the upstream. Does not help |
+| ka-timeout | `keepalive_timeout 400ms` on the upstream. Does not help |
 | idle-close | No turnover; the app's own idle timeout closes connections |
 | backend-noka | The app answers `Connection: close`, so nothing is pooled |
 | drain | Retire the instance from the upstream before stopping it |

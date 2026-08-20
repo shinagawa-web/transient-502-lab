@@ -15,7 +15,7 @@
 #   retry-get            default proxy_next_upstream, GET. Retries hide it
 #   retry-post           default proxy_next_upstream, POST. Not retried
 #   nonidem-post         retry-post plus non_idempotent, changing nothing else
-#   ka-timeout           keepalive_timeout 5s on the upstream. Does it help
+#   ka-timeout           keepalive_timeout 400ms on the upstream. Does it help
 #   idle-close           no turnover; the app's own 1s idle timeout closes them
 #   backend-noka         the app answers Connection: close, so nothing is pooled
 #   drain                retire an instance from the upstream before stopping it
